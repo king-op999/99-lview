@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: telegram-view-api
-    runtime: node
-    buildCommand: npm install
-    startCommand: node index.js
-    nodeVersion: 18
+    name: bronx-views-http
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
