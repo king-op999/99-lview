@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Telegram Views API (Your HTTP Proxies Only)
+# app.py - BRONX ULTRA Telegram Views API (Fixed)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -11,11 +11,11 @@ app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 80
-TIMEOUT = 15
+THREADS = 50  # ✅ Reduced for better success
+TIMEOUT = 10
 RETRY_COUNT = 2
 
-# ✅ ONLY YOUR HTTP PROXIES (Clean format - without http://)
+# ✅ SIRF AAPKI HTTP PROXIES (Yahi use hongi, kuch aur nahi)
 WORKING_PROXIES = [
     "84.17.47.150:9002", "84.17.47.149:9002", "84.17.47.148:9002",
     "84.17.47.147:9002", "84.17.47.146:9002", "84.17.47.126:9002",
@@ -53,8 +53,8 @@ WORKING_PROXIES = [
     "51.79.173.71:443"
 ]
 
-# ✅ Remove duplicates
-WORKING_PROXIES = list(set(WORKING_PROXIES))
+# ✅ Remove duplicates and invalid
+WORKING_PROXIES = list(set([p for p in WORKING_PROXIES if p and ':' in p]))
 print(f"[PROXY] Loaded {len(WORKING_PROXIES)} HTTP proxies")
 
 # ============= TELEGRAM VIEW SENDER =============
@@ -143,6 +143,7 @@ def send_views_batch(channel, post_id, count=100):
     """Send views using proxies"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
+    # ✅ Use only working proxies
     proxies_to_use = WORKING_PROXIES.copy()
     random.shuffle(proxies_to_use)
     proxies_to_use = proxies_to_use[:count]
@@ -181,7 +182,7 @@ def home():
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
         "proxies_loaded": len(WORKING_PROXIES),
-        "note": "✅ HTTP proxies only",
+        "note": "✅ HTTP proxies only - No scraping",
         "endpoints": {
             "/api/views": "GET/POST - Send views",
             "/api/proxies": "GET - Get proxy list",
