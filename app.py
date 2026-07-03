@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Telegram Views API
+# app.py - BRONX ULTRA Telegram Views API (Port 80 Proxies)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -6,214 +6,150 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
+import os
 
 app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 200  # Max concurrent threads
+THREADS = 50
 TIMEOUT = 15
-MAX_RETRIES = 3
+RETRY_COUNT = 2
 
-# Proxy sources from your config.ini
-HTTP_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http",
-    "https://openproxy.space/list/http",
-    "https://openproxylist.xyz/http.txt",
-    "https://proxyspace.pro/http.txt",
-    "https://proxyspace.pro/https.txt",
-    "https://rootjazz.com/proxies/proxies.txt",
-    "https://raw.githubusercontent.com/almroot/proxylist/master/list.txt",
-    "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
-    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt",
-    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt",
-    "https://www.proxy-list.download/api/v1/get?type=http",
-    "https://www.proxy-list.download/api/v1/get?type=https",
+# ✅ YOUR WORKING PORT 80 PROXIES
+WORKING_PROXIES = [
+    "173.245.49.35:80", "141.101.123.25:80", "172.67.176.89:80",
+    "172.67.176.18:80", "45.12.30.71:80", "45.12.30.107:80",
+    "45.12.31.84:80", "173.245.49.68:80", "172.67.72.1:80",
+    "45.12.30.233:80", "172.67.75.200:80", "141.193.213.78:80",
+    "103.21.244.138:80", "172.64.90.66:80", "172.67.142.0:80",
+    "141.101.120.98:80", "141.101.120.225:80", "141.101.121.137:80",
+    "141.101.122.76:80", "45.131.7.142:80", "188.114.96.24:80",
+    "63.141.128.38:80", "188.114.97.20:80", "172.67.154.177:80",
+    "63.141.128.11:80", "172.67.70.240:80", "45.85.119.44:80",
+    "185.170.166.74:80", "66.235.200.24:80", "159.112.235.160:80",
+    "160.153.0.25:80", "141.101.122.79:80", "63.141.128.196:80",
+    "172.67.159.204:80", "23.227.39.225:80", "172.67.211.244:80",
+    "108.162.198.248:80", "45.67.215.143:80", "45.8.211.50:80",
+    "91.193.58.130:80", "195.85.23.240:80", "172.67.181.36:80",
+    "172.67.167.57:80", "185.162.231.99:80", "172.67.180.248:80",
+    "141.101.121.131:80", "141.101.123.174:80", "45.131.6.205:80",
+    "63.141.128.10:80", "172.67.91.36:80", "199.34.228.176:80",
+    "45.12.31.35:80", "45.12.30.29:80", "185.162.229.102:80",
+    "185.162.231.45:80", "185.162.230.79:80", "45.12.30.7:80",
+    "185.162.231.130:80", "45.12.30.119:80", "172.67.179.203:80",
+    "172.67.75.186:80", "188.114.96.253:80", "172.67.144.217:80",
+    "172.67.172.29:80"
 ]
 
-SOCKS4_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=getproxies&protocol=socks4",
-    "https://openproxy.space/list/socks4",
-    "https://openproxylist.xyz/socks4.txt",
-    "https://proxyspace.pro/socks4.txt",
-    "https://www.proxy-list.download/api/v1/get?type=socks4",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt",
-]
-
-SOCKS5_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=getproxies&protocol=socks5",
-    "https://openproxy.space/list/socks5",
-    "https://openproxylist.xyz/socks5.txt",
-    "https://proxyspace.pro/socks5.txt",
-    "https://www.proxy-list.download/api/v1/get?type=socks5",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt",
-    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt",
-]
-
-# Regex to match IP:PORT
-IP_REGEX = re.compile(r'(?:^|\D)?((?:(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])):(?:(?:\d|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])))(?:\D|$)')
-
-# Store proxies
-proxies_list = {"http": [], "socks4": [], "socks5": []}
-proxy_lock = threading.Lock()
-last_update = 0
-UPDATE_INTERVAL = 300  # 5 minutes
-
-# ============= PROXY SCRAPER =============
-
-def scrap_proxies(sources, proxy_type):
-    """Scrape proxies from sources"""
-    new_proxies = []
-    for url in sources:
-        try:
-            response = requests.get(url, timeout=20, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-            
-            if response.status_code == 200:
-                # Find all IP:PORT matches
-                matches = IP_REGEX.findall(response.text)
-                for match in matches:
-                    if match and len(match) > 0:
-                        proxy = match[0] if isinstance(match, tuple) else match
-                        if proxy and '303.303.303' not in proxy:  # Skip invalid
-                            new_proxies.append(proxy)
-        except Exception as e:
-            print(f"[SCRAP] Error scraping {url}: {e}")
-    
-    return list(set(new_proxies))  # Remove duplicates
-
-def update_proxies():
-    """Update proxy list from all sources"""
-    global proxies_list, last_update
-    
-    print("[PROXY] Starting proxy update...")
-    
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(scrap_proxies, HTTP_SOURCES, 'http'): 'http',
-            executor.submit(scrap_proxies, SOCKS4_SOURCES, 'socks4'): 'socks4',
-            executor.submit(scrap_proxies, SOCKS5_SOURCES, 'socks5'): 'socks5'
-        }
-        
-        with proxy_lock:
-            for future in as_completed(futures):
-                proxy_type = futures[future]
-                try:
-                    result = future.result()
-                    proxies_list[proxy_type] = result
-                    print(f"[PROXY] Loaded {len(result)} {proxy_type} proxies")
-                except Exception as e:
-                    print(f"[PROXY] Error for {proxy_type}: {e}")
-    
-    last_update = time.time()
-    print(f"[PROXY] Update complete. Total: {sum(len(p) for p in proxies_list.values())} proxies")
-
-def get_proxies(proxy_type='http', limit=100):
-    """Get proxies from list"""
-    current_time = time.time()
-    if current_time - last_update > UPDATE_INTERVAL:
-        # Update in background
-        threading.Thread(target=update_proxies, daemon=True).start()
-    
-    with proxy_lock:
-        proxies = proxies_list.get(proxy_type, [])
-        if not proxies:
-            # Fallback to all types
-            all_proxies = proxies_list['http'] + proxies_list['socks4'] + proxies_list['socks5']
-            proxies = all_proxies
-    
-    # Shuffle and return limited
-    random.shuffle(proxies)
-    return proxies[:limit]
+# ✅ Remove duplicates
+WORKING_PROXIES = list(set(WORKING_PROXIES))
+print(f"[PROXY] Loaded {len(WORKING_PROXIES)} Port 80 proxies")
 
 # ============= TELEGRAM VIEW SENDER =============
 
-def send_telegram_view(proxy, proxy_type, channel, post_id):
-    """Send view using single proxy"""
+def send_telegram_view(proxy, channel, post_id, retry=0):
+    """Send view using HTTP proxy"""
     try:
         session = requests.Session()
         
-        # Step 1: Get the post page
-        url = f"https://t.me/{channel}/{post_id}"
-        headers = {
-            'Referer': f'https://t.me/{channel}',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        
         proxies = {
-            'http': f'{proxy_type}://{proxy}',
-            'https': f'{proxy_type}://{proxy}'
+            'http': f'http://{proxy}',
+            'https': f'http://{proxy}'
         }
         
+        headers = {
+            'User-Agent': random.choice([
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
+            ]),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'close'
+        }
+        
+        # Step 1: Get post page
+        url = f"https://t.me/{channel}/{post_id}"
         response = session.get(
             f"{url}?embed=1&mode=tme",
             headers=headers,
             proxies=proxies,
-            timeout=TIMEOUT
+            timeout=TIMEOUT,
+            verify=False  # ✅ SSL verification off for faster response
         )
         
-        # Extract view token
+        if response.status_code != 200:
+            if retry < RETRY_COUNT:
+                time.sleep(0.5)
+                return send_telegram_view(proxy, channel, post_id, retry + 1)
+            return False, f"Status: {response.status_code}"
+        
+        # Step 2: Extract view token
         view_match = re.search(r'data-view="([^"]+)"', response.text)
         if not view_match:
-            return False, "No view token found"
+            return False, "No token"
         
         view_token = view_match.group(1)
-        
-        # Step 2: Send view request
         cookies = session.cookies.get_dict()
-        view_headers = {
-            'Referer': f'https://t.me/{channel}/{post_id}?embed=1&mode=tme',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
         
+        # Step 3: Send view
         view_response = session.get(
             'https://t.me/v/',
             params={'views': view_token},
             cookies={
                 'stel_dt': '-240',
-                'stel_web_auth': 'https%3A%2F%2Fweb.telegram.org%2Fz%2F',
                 'stel_ssid': cookies.get('stel_ssid', ''),
                 'stel_on': cookies.get('stel_on', '')
             },
-            headers=view_headers,
+            headers={
+                'Referer': f'https://t.me/{channel}/{post_id}?embed=1&mode=tme',
+                'X-Requested-With': 'XMLHttpRequest',
+                'User-Agent': headers['User-Agent']
+            },
             proxies=proxies,
-            timeout=TIMEOUT
+            timeout=TIMEOUT,
+            verify=False
         )
         
         if view_response.status_code == 200:
-            return True, "View sent"
+            return True, "Success"
         else:
-            return False, f"Status: {view_response.status_code}"
-            
+            if retry < RETRY_COUNT:
+                time.sleep(0.5)
+                return send_telegram_view(proxy, channel, post_id, retry + 1)
+            return False, f"View status: {view_response.status_code}"
+        
+    except requests.exceptions.ProxyError:
+        return False, "Proxy error"
+    except requests.exceptions.Timeout:
+        return False, "Timeout"
+    except requests.exceptions.ConnectionError:
+        return False, "Connection error"
     except Exception as e:
-        return False, str(e)
+        if retry < RETRY_COUNT:
+            time.sleep(0.5)
+            return send_telegram_view(proxy, channel, post_id, retry + 1)
+        return False, str(e)[:40]
 
-def send_views_batch(channel, post_id, count=100, proxy_type='http'):
-    """Send views using multiple proxies"""
-    proxies = get_proxies(proxy_type, count * 2)
+def send_views_batch(channel, post_id, count=100):
+    """Send views using proxies"""
+    results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
-    if not proxies:
-        return {"success": False, "message": "No proxies available"}
+    proxies_to_use = WORKING_PROXIES.copy()
+    random.shuffle(proxies_to_use)
+    proxies_to_use = proxies_to_use[:count]
     
-    results = {
-        "success": 0,
-        "failed": 0,
-        "errors": [],
-        "proxies_used": []
-    }
+    if not proxies_to_use:
+        return results
     
-    # Limit to requested count
-    proxies_to_use = proxies[:count]
+    print(f"[VIEWS] Sending {len(proxies_to_use)} views...")
     
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = {
-            executor.submit(send_telegram_view, proxy, proxy_type, channel, post_id): proxy
+            executor.submit(send_telegram_view, proxy, channel, post_id): proxy
             for proxy in proxies_to_use
         }
         
@@ -226,12 +162,10 @@ def send_views_batch(channel, post_id, count=100, proxy_type='http'):
                     results["proxies_used"].append(proxy)
                 else:
                     results["failed"] += 1
-                    if len(results["errors"]) < 10:  # Limit errors
+                    if len(results["errors"]) < 8:
                         results["errors"].append(f"{proxy}: {message}")
             except Exception as e:
                 results["failed"] += 1
-                if len(results["errors"]) < 10:
-                    results["errors"].append(f"{proxy}: Timeout")
     
     return results
 
@@ -244,75 +178,50 @@ def home():
         "service": "BRONX ULTRA Telegram Views API",
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
+        "proxies_loaded": len(WORKING_PROXIES),
+        "note": "✅ Port 80 proxies - Working",
         "endpoints": {
-            "/api/views": "POST - Send views",
+            "/api/views": "GET/POST - Send views",
             "/api/proxies": "GET - Get proxy list",
-            "/api/update-proxies": "GET - Force update proxies"
+            "/api/stats": "GET - Statistics"
         },
-        "example": {
-            "method": "POST",
-            "url": "/api/views",
-            "body": {
-                "link": "https://t.me/bronx_ultra_osint/177",
-                "count": 100,
-                "proxy_type": "http"
-            }
-        }
+        "example": "/api/views?link=https://t.me/channel/10&count=50"
     })
 
 @app.route('/api/views', methods=['POST', 'GET'])
 def api_views():
-    """Main API endpoint - Send views to Telegram post"""
+    """Main API endpoint"""
     try:
-        # Get parameters
         if request.method == 'POST':
             data = request.get_json() or {}
             link = data.get('link', '')
             count = data.get('count', 100)
-            proxy_type = data.get('proxy_type', 'http')
         else:
             link = request.args.get('link', '')
             count = int(request.args.get('count', 100))
-            proxy_type = request.args.get('proxy_type', 'http')
         
-        # Validate link
         if not link:
-            return jsonify({
-                "status": "error",
-                "message": "Post link required",
-                "developer": BOT_NAME,
-                "example": "https://t.me/bronx_ultra_osint/177"
-            }), 400
+            return jsonify({"status": "error", "message": "Post link required", "developer": BOT_NAME}), 400
         
-        # Extract channel and post_id
         match = re.search(r't\.me/([^/]+)/(\d+)', link)
         if not match:
-            return jsonify({
-                "status": "error",
-                "message": "Invalid Telegram post link format",
-                "developer": BOT_NAME
-            }), 400
+            return jsonify({"status": "error", "message": "Invalid link", "developer": BOT_NAME}), 400
         
         channel, post_id = match.groups()
         
-        # Validate count
         try:
             count = int(count)
-            if count < 1:
-                count = 1
-            if count > 1000:
-                count = 1000
+            if count < 1: count = 1
+            if count > len(WORKING_PROXIES): count = len(WORKING_PROXIES)
         except:
-            count = 100
+            count = 50
         
-        # Validate proxy_type
-        if proxy_type not in ['http', 'socks4', 'socks5']:
-            proxy_type = 'http'
-        
-        # Send views
         start_time = time.time()
-        result = send_views_batch(channel, post_id, count, proxy_type)
+        result = send_views_batch(channel, post_id, count)
         elapsed = round((time.time() - start_time) * 1000, 2)
+        
+        total = result["success"] + result["failed"]
+        success_rate = round((result["success"] / total * 100), 2) if total > 0 else 0
         
         return jsonify({
             "status": "success",
@@ -324,83 +233,48 @@ def api_views():
             "requested": count,
             "success": result["success"],
             "failed": result["failed"],
+            "success_rate": f"{success_rate}%",
             "proxies_used": len(result["proxies_used"]),
-            "errors": result["errors"][:5],  # Only show first 5 errors
-            "proxy_type": proxy_type,
+            "total_proxies": len(WORKING_PROXIES),
+            "errors": result["errors"][:5],
             "execution_time_ms": elapsed,
-            "message": f"✅ Sent {result['success']} views successfully!"
+            "message": f"✅ {result['success']} views! (Rate: {success_rate}%)"
         })
         
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "developer": BOT_NAME
-        }), 500
+        return jsonify({"status": "error", "message": str(e), "developer": BOT_NAME}), 500
 
 @app.route('/api/proxies', methods=['GET'])
 def api_proxies():
-    """Get current proxy list"""
-    proxy_type = request.args.get('type', 'http')
+    """Get working proxies"""
     limit = int(request.args.get('limit', 20))
-    
-    proxies = get_proxies(proxy_type, limit)
+    proxies = WORKING_PROXIES[:limit]
     
     return jsonify({
         "status": "success",
         "developer": BOT_NAME,
-        "proxy_type": proxy_type,
-        "count": len(proxies),
-        "proxies": proxies,
-        "total_http": len(proxies_list['http']),
-        "total_socks4": len(proxies_list['socks4']),
-        "total_socks5": len(proxies_list['socks5']),
-        "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_update))
+        "total_proxies": len(WORKING_PROXIES),
+        "proxies": proxies
     })
-
-@app.route('/api/update-proxies', methods=['GET'])
-def api_update_proxies():
-    """Force update proxies"""
-    try:
-        threading.Thread(target=update_proxies, daemon=True).start()
-        return jsonify({
-            "status": "success",
-            "message": "Proxy update started in background",
-            "developer": BOT_NAME
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "developer": BOT_NAME
-        }), 500
 
 @app.route('/api/stats', methods=['GET'])
 def api_stats():
-    """Get statistics"""
+    """Statistics"""
     return jsonify({
         "status": "success",
         "developer": BOT_NAME,
         "stats": {
-            "http_proxies": len(proxies_list['http']),
-            "socks4_proxies": len(proxies_list['socks4']),
-            "socks5_proxies": len(proxies_list['socks5']),
-            "total_proxies": sum(len(p) for p in proxies_list.values()),
-            "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_update)),
+            "total_proxies": len(WORKING_PROXIES),
             "threads": THREADS,
-            "update_interval": f"{UPDATE_INTERVAL}s"
+            "timeout": TIMEOUT,
+            "retry_count": RETRY_COUNT
         }
     })
 
-# ============= INITIALIZATION =============
-
-# Start proxy update on startup
-threading.Thread(target=update_proxies, daemon=True).start()
-
 if __name__ == '__main__':
-    print("=" * 60)
-    print("🔥 BRONX ULTRA Telegram Views API")
-    print(f"🤖 Developer: {BOT_NAME}")
-    print(f"📡 Proxy Threads: {THREADS}")
-    print("=" * 60)
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    print("=" * 50)
+    print(f"🔥 BRONX ULTRA Views API")
+    print(f"✅ {len(WORKING_PROXIES)} Port 80 Proxies")
+    print("=" * 50)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
