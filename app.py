@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Telegram Views API (Fixed)
+# app.py - BRONX ULTRA Telegram Views API (OPTIMIZED)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -11,56 +11,89 @@ app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 50  # ✅ Reduced for better success
-TIMEOUT = 10
+THREADS = 80  # ✅ Optimized for Render free tier
+TIMEOUT = 12
 RETRY_COUNT = 2
 
-# ✅ SIRF AAPKI HTTP PROXIES (Yahi use hongi, kuch aur nahi)
-WORKING_PROXIES = [
-    "84.17.47.150:9002", "84.17.47.149:9002", "84.17.47.148:9002",
-    "84.17.47.147:9002", "84.17.47.146:9002", "84.17.47.126:9002",
-    "84.17.47.125:9002", "84.17.47.124:9002", "129.151.160.199:443",
-    "74.103.66.15:443", "51.38.191.151:443", "128.199.207.200:443",
-    "45.114.142.178:443", "138.199.35.215:9002", "138.199.35.214:9002",
-    "138.199.35.213:9002", "138.199.35.212:9002", "138.199.35.208:9002",
-    "138.199.35.205:9002", "138.199.35.204:9002", "138.199.35.203:9002",
-    "138.199.35.201:9002", "138.199.35.200:9002", "138.199.35.198:9002",
-    "138.199.35.197:9002", "138.199.35.195:9002", "138.199.35.199:9002",
-    "138.199.35.217:9002", "156.146.59.28:9002", "156.146.59.29:9002",
-    "156.146.59.50:9002", "84.239.49.164:9002", "156.146.59.8:9002",
-    "156.146.59.13:9002", "156.146.59.2:9002", "156.146.59.3:9002",
-    "156.146.59.4:9002", "156.146.59.5:9002", "156.146.59.6:9002",
-    "156.146.59.7:9002", "156.146.59.9:9002", "156.146.59.10:9002",
-    "84.239.49.37:9002", "84.239.49.38:9002", "84.239.49.39:9002",
-    "156.146.59.11:9002", "84.239.49.40:9002", "84.239.49.41:9002",
-    "84.239.49.43:9002", "84.239.49.44:9002", "84.239.49.45:9002",
-    "84.239.49.46:9002", "84.239.49.47:9002", "84.239.49.48:9002",
-    "84.239.49.49:9002", "84.239.49.50:9002", "156.146.59.12:9002",
-    "84.239.49.51:9002", "156.146.59.14:9002", "156.146.59.15:9002",
-    "156.146.59.16:9002", "156.146.59.17:9002", "156.146.59.18:9002",
-    "156.146.59.19:9002", "156.146.59.20:9002", "84.239.49.157:9002",
-    "84.239.49.161:9002", "84.239.49.169:9002", "84.239.49.200:9002",
-    "84.239.49.204:9002", "84.239.49.209:9002", "84.239.49.218:9002",
-    "84.239.49.220:9002", "84.239.49.229:9002", "84.239.49.231:9002",
-    "84.239.49.244:9002", "84.239.49.246:9002", "84.239.49.247:9002",
-    "84.239.49.248:9002", "84.239.49.249:9002", "84.239.49.250:9002",
-    "84.239.49.251:9002", "84.239.49.253:9002", "84.239.49.254:9002",
-    "84.239.14.160:9002", "84.239.14.146:9002", "84.239.14.147:9002",
-    "84.239.14.148:9002", "84.239.14.149:9002", "84.239.14.150:9002",
-    "84.239.14.151:9002", "84.239.14.152:9002", "84.239.14.153:9002",
-    "84.239.14.154:9002", "84.239.14.155:9002", "84.239.14.156:9002",
-    "84.239.14.157:9002", "84.239.14.158:9002", "84.239.14.159:9002",
-    "51.79.173.71:443"
+# ✅ SIRF HTTP PROXY SOURCES (SOCKS HATAYE)
+HTTP_SOURCES = [
+    "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http",
+    "https://openproxylist.xyz/http.txt",
+    "https://proxyspace.pro/http.txt",
+    "https://proxyspace.pro/https.txt",
+    "https://www.proxy-list.download/api/v1/get?type=http",
+    "https://www.proxy-list.download/api/v1/get?type=https",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt",
+    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt",
+    "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
+    "https://raw.githubusercontent.com/almroot/proxylist/master/list.txt",
 ]
 
-# ✅ Remove duplicates and invalid
-WORKING_PROXIES = list(set([p for p in WORKING_PROXIES if p and ':' in p]))
-print(f"[PROXY] Loaded {len(WORKING_PROXIES)} HTTP proxies")
+# Regex to match IP:PORT
+IP_REGEX = re.compile(r'(?:^|\D)?((?:(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])):(?:(?:\d|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])))(?:\D|$)')
+
+# ✅ Store ONLY HTTP proxies
+proxies_list = []
+proxy_lock = threading.Lock()
+last_update = 0
+UPDATE_INTERVAL = 600  # 10 minutes
+
+# ============= PROXY SCRAPER =============
+
+def scrap_proxies():
+    """Scrape ONLY HTTP proxies"""
+    new_proxies = []
+    for url in HTTP_SOURCES:
+        try:
+            response = requests.get(url, timeout=20, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            
+            if response.status_code == 200:
+                matches = IP_REGEX.findall(response.text)
+                for match in matches:
+                    proxy = match[0] if isinstance(match, tuple) else match
+                    if proxy and '303.303.303' not in proxy:
+                        new_proxies.append(proxy)
+        except Exception as e:
+            pass
+    
+    return list(set(new_proxies))  # Remove duplicates
+
+def update_proxies():
+    """Update proxy list"""
+    global proxies_list, last_update
+    
+    print("[PROXY] Starting HTTP proxy update...")
+    result = scrap_proxies()
+    
+    with proxy_lock:
+        proxies_list = result
+    
+    last_update = time.time()
+    print(f"[PROXY] Loaded {len(proxies_list)} HTTP proxies")
+
+def get_proxies(limit=100):
+    """Get proxies from list"""
+    current_time = time.time()
+    if current_time - last_update > UPDATE_INTERVAL or not proxies_list:
+        threading.Thread(target=update_proxies, daemon=True).start()
+        # Return existing proxies while updating
+        with proxy_lock:
+            proxies = proxies_list.copy()
+    else:
+        with proxy_lock:
+            proxies = proxies_list.copy()
+    
+    random.shuffle(proxies)
+    return proxies[:limit]
 
 # ============= TELEGRAM VIEW SENDER =============
 
 def send_telegram_view(proxy, channel, post_id, retry=0):
-    """Send view using HTTP proxy with retry"""
+    """Send view using HTTP proxy"""
     try:
         session = requests.Session()
         
@@ -75,7 +108,6 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
             ]),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -143,10 +175,11 @@ def send_views_batch(channel, post_id, count=100):
     """Send views using proxies"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
-    # ✅ Use only working proxies
-    proxies_to_use = WORKING_PROXIES.copy()
-    random.shuffle(proxies_to_use)
-    proxies_to_use = proxies_to_use[:count]
+    proxies = get_proxies(count * 2)
+    if not proxies:
+        return results
+    
+    proxies_to_use = proxies[:count]
     
     print(f"[VIEWS] Sending {len(proxies_to_use)} views...")
     
@@ -181,12 +214,13 @@ def home():
         "service": "BRONX ULTRA Telegram Views API",
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
-        "proxies_loaded": len(WORKING_PROXIES),
-        "note": "✅ HTTP proxies only - No scraping",
+        "proxies_loaded": len(proxies_list),
+        "note": "✅ HTTP proxies only - SOCKS removed",
         "endpoints": {
             "/api/views": "GET/POST - Send views",
             "/api/proxies": "GET - Get proxy list",
-            "/api/stats": "GET - Statistics"
+            "/api/stats": "GET - Statistics",
+            "/api/update": "GET - Force update proxies"
         },
         "example": "/api/views?link=https://t.me/channel/10&count=50"
     })
@@ -238,7 +272,7 @@ def api_views():
             "failed": result["failed"],
             "success_rate": f"{success_rate}%",
             "proxies_used": len(result["proxies_used"]),
-            "total_proxies": len(WORKING_PROXIES),
+            "total_proxies": len(proxies_list),
             "errors": result["errors"][:5],
             "execution_time_ms": elapsed,
             "message": f"✅ {result['success']} views! (Rate: {success_rate}%)"
@@ -249,14 +283,14 @@ def api_views():
 
 @app.route('/api/proxies', methods=['GET'])
 def api_proxies():
-    """Get working proxies"""
+    """Get current proxy list"""
     limit = int(request.args.get('limit', 20))
-    proxies = WORKING_PROXIES[:limit]
+    proxies = get_proxies(limit)
     
     return jsonify({
         "status": "success",
         "developer": BOT_NAME,
-        "total_proxies": len(WORKING_PROXIES),
+        "total_proxies": len(proxies_list),
         "proxies": proxies
     })
 
@@ -267,16 +301,32 @@ def api_stats():
         "status": "success",
         "developer": BOT_NAME,
         "stats": {
-            "total_proxies": len(WORKING_PROXIES),
+            "total_proxies": len(proxies_list),
             "threads": THREADS,
             "timeout": TIMEOUT,
-            "retry_count": RETRY_COUNT
+            "retry_count": RETRY_COUNT,
+            "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_update))
         }
     })
 
+@app.route('/api/update', methods=['GET'])
+def api_update():
+    """Force update proxies"""
+    threading.Thread(target=update_proxies, daemon=True).start()
+    return jsonify({
+        "status": "success",
+        "message": "Proxy update started",
+        "developer": BOT_NAME
+    })
+
+# ============= STARTUP =============
+print("=" * 50)
+print("🔥 BRONX ULTRA Views API")
+print("✅ HTTP Proxies Only (SOCKS removed)")
+print("=" * 50)
+
+threading.Thread(target=update_proxies, daemon=True).start()
+
 if __name__ == '__main__':
-    print("=" * 50)
-    print("🔥 BRONX ULTRA Views API")
-    print(f"✅ {len(WORKING_PROXIES)} HTTP Proxies Loaded")
-    print("=" * 50)
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
