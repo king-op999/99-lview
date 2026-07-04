@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Views API (Fixed)
+# app.py - BRONX ULTRA Views API (1 View Per Proxy)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -12,58 +12,63 @@ app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 30
+THREADS = 30  # ✅ Slow but unique views
 TIMEOUT = 15
-RETRY_COUNT = 2
+RETRY_COUNT = 1
 
-# ✅ ALL PROXIES (HTTP/HTTPS)
-PROXIES = [
-    "206.81.31.215:80", "62.133.62.231:1081", "140.245.238.56:53",
-    "103.102.138.218:1450", "147.45.76.207:3128", "103.172.71.209:1080",
-    "103.204.211.48:32255", "103.173.138.236:1111", "103.81.194.178:80",
-    "156.232.99.59:10808", "222.228.194.131:8080", "41.203.76.166:8080",
-    "103.239.41.49:8080", "190.210.62.131:8080", "103.142.69.169:8885",
-    "97.76.251.138:8080", "179.49.113.225:999", "209.14.118.116:999",
-    "195.62.50.25:8080", "103.135.189.146:82", "38.156.235.173:999",
-    "43.246.201.53:23654", "62.133.62.184:1082", "82.114.228.67:1080",
-    "117.236.124.166:3128", "62.133.62.249:1082", "51.161.142.97:8080",
-    "190.2.214.66:999", "103.242.104.150:8080", "5.202.191.225:8080",
-    "62.60.149.161:3128", "45.95.233.237:1082", "91.203.8.74:8080",
-    "47.81.56.193:8888", "185.230.190.195:3128", "45.168.244.168:80",
-    "207.246.68.214:3129", "178.250.156.112:443", "47.83.168.191:4000",
-    "77.110.113.236:8080", "81.168.119.85:443", "159.223.87.50:443",
-    "62.133.62.12:1081", "119.95.188.3:8082", "45.95.232.35:3128",
-    "203.162.13.26:6868", "103.170.22.145:8080", "113.160.132.26:8080",
-    "187.72.215.33:3128", "132.243.234.171:9443", "103.82.20.76:8080",
-    "34.87.80.22:130000", "103.129.127.244:8088", "200.227.89.50:3128",
-    "77.221.158.175:3128", "203.162.13.222:6868", "159.223.201.213:3128",
-    "103.167.61.162:3128", "202.28.194.139:31280", "165.154.7.156:8888",
-    "80.151.57.81:8080", "34.96.238.40:8080", "43.153.199.126:8888",
-    "49.51.228.35:81", "206.189.144.164:10808", "71.198.208.169:443",
-    "157.180.84.115:443", "185.196.61.251:8081", "91.107.182.124:82",
-    "151.243.153.157:8118", "34.93.219.118:80", "51.178.253.9:880",
-    "86.62.2.253:128", "14.143.222.113:57748", "174.137.134.182:2999",
-    "190.2.145.103:3128", "152.67.154.35:3128", "104.194.146.9:80",
-    "159.195.69.220:8888", "64.188.77.221:3128", "159.195.49.27:8888",
-    "54.38.138.60:3128", "185.121.13.73:3128", "193.29.224.20:3128",
-    "65.109.65.239:18080", "45.157.140.12:1080", "212.34.146.118:3128",
-    "91.188.213.143:1080", "72.56.238.99:9090", "185.181.209.34:8080",
-    "82.146.38.71:443", "176.12.65.24:443", "34.43.46.91:80",
-    "92.118.112.25:1082", "23.94.112.168:8080", "67.43.112.129:8080",
-    "43.162.83.26:3128", "23.224.193.45:3128", "129.146.127.232:3128",
-    "107.175.44.109:3128"
+# ✅ YOUR WORKING HTTPS PROXIES
+WORKING_PROXIES = [
+    "154.113.209.162:8082", "208.82.61.64:3128", "182.253.21.26:46977",
+    "58.69.248.180:8080", "103.88.237.97:84", "188.132.150.47:8080",
+    "203.28.67.74:8080", "168.121.242.91:999", "182.160.107.45:12331",
+    "115.191.40.196:7890", "103.209.36.58:8080", "5.45.126.165:13215",
+    "126.209.1.14:8082", "47.236.86.147:443", "181.63.33.136:8080",
+    "101.255.209.165:8080", "122.54.166.184:8082", "38.194.250.66:999",
+    "103.122.64.232:8080", "110.34.1.180:32650", "85.29.58.227:8080",
+    "150.107.29.165:3128", "143.244.140.119:3128", "23.224.193.42:3128",
+    "131.222.210.39:8080", "41.33.89.100:1981", "125.135.136.210:3140",
+    "131.222.253.76:8080", "47.252.41.213:443", "42.96.18.62:1311",
+    "113.160.115.254:8080", "131.222.210.41:8080", "154.208.58.89:8080",
+    "154.18.255.137:8080", "178.217.168.164:55443", "37.60.237.110:30001",
+    "196.219.64.252:8080", "51.254.133.152:80", "108.181.0.167:3128",
+    "172.105.121.181:3128", "34.73.100.77:3129", "8.222.175.80:6128",
+    "176.12.72.62:3128", "187.103.105.20:8085", "193.233.128.128:3128",
+    "190.119.90.114:8080", "188.166.9.27:3129", "182.160.104.211:12331",
+    "103.18.205.162:8080", "205.209.64.193:8080", "5.175.151.66:8080",
+    "104.194.148.204:80", "94.43.164.242:8080", "116.254.113.86:8080",
+    "49.145.119.171:8081", "154.113.147.14:8080", "181.48.234.214:8080",
+    "178.128.95.176:8080", "206.135.32.70:999", "106.10.55.212:1121",
+    "103.137.35.2:80", "61.49.87.3:80", "54.38.35.209:3128",
+    "45.136.254.27:8080", "185.126.5.92:8080", "103.230.150.58:8080",
+    "160.191.192.45:8090", "181.209.118.250:999", "195.62.50.141:8080",
+    "190.52.110.43:999", "101.96.98.138:8080", "131.222.251.90:8080",
+    "121.101.129.103:8080", "176.88.166.197:8080", "222.127.68.126:8080",
+    "38.194.246.34:999", "119.195.17.15:3056", "181.119.105.157:999",
+    "139.28.49.23:8080", "131.222.251.61:8080", "129.226.149.231:3128",
+    "154.12.60.65:888", "125.209.110.83:39617", "200.215.229.14:999",
+    "103.134.220.122:1080", "27.147.28.73:8080", "101.109.32.112:8080",
+    "140.246.125.194:9099", "129.222.204.27:10000", "173.212.246.157:3128",
+    "51.178.253.9:880", "94.72.109.169:8080", "131.222.253.236:8080",
+    "43.162.83.26:3128", "87.106.120.212:3128", "122.3.87.41:8080",
+    "79.76.121.87:3128", "50.200.166.130:8080"
 ]
 
-# ✅ Filter working proxies
-WORKING_PROXIES = list(set([p for p in PROXIES if p and ':' in p]))
-print(f"[PROXY] Loaded {len(WORKING_PROXIES)} proxies")
+# ✅ Remove duplicates
+WORKING_PROXIES = list(set(WORKING_PROXIES))
+print(f"[PROXY] Loaded {len(WORKING_PROXIES)} unique proxies")
 
 # ============= TELEGRAM VIEW SENDER =============
 
-def send_telegram_view(proxy, channel, post_id, retry=0):
-    """Send view with proper headers"""
+def send_telegram_view(proxy, channel, post_id):
+    """Send 1 view using 1 proxy"""
     try:
         session = requests.Session()
+        
+        # ✅ HTTP/HTTPS proxy
+        proxies = {
+            'http': f'http://{proxy}',
+            'https': f'http://{proxy}'
+        }
         
         # ✅ Random User-Agent for each request
         user_agent = random.choice([
@@ -73,22 +78,16 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
         ])
         
-        proxies = {
-            'http': f'http://{proxy}',
-            'https': f'http://{proxy}'
-        }
-        
         headers = {
             'User-Agent': user_agent,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Connection': 'close'
         }
         
-        # ✅ Step 1: Get post page with embed
+        # ✅ Step 1: Get post page
         url = f"https://t.me/{channel}/{post_id}"
         response = session.get(
             f"{url}?embed=1&mode=tme",
@@ -100,9 +99,6 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
         )
         
         if response.status_code != 200:
-            if retry < RETRY_COUNT:
-                time.sleep(1)
-                return send_telegram_view(proxy, channel, post_id, retry + 1)
             return False, f"Status: {response.status_code}"
         
         # ✅ Step 2: Extract view token
@@ -113,7 +109,7 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
         view_token = view_match.group(1)
         cookies = session.cookies.get_dict()
         
-        # ✅ Step 3: Send view with proper cookies
+        # ✅ Step 3: Send view
         view_response = session.get(
             'https://t.me/v/',
             params={'views': view_token},
@@ -135,21 +131,16 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
         if view_response.status_code == 200:
             return True, "Success"
         else:
-            if retry < RETRY_COUNT:
-                time.sleep(1)
-                return send_telegram_view(proxy, channel, post_id, retry + 1)
             return False, f"View status: {view_response.status_code}"
         
     except Exception as e:
-        if retry < RETRY_COUNT:
-            time.sleep(1)
-            return send_telegram_view(proxy, channel, post_id, retry + 1)
         return False, str(e)[:40]
 
-def send_views_batch(channel, post_id, count=30):
-    """Send views with better headers"""
+def send_views_batch(channel, post_id, count=50):
+    """Send 1 view per proxy"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
+    # ✅ Use all proxies, each sends 1 view
     proxies_to_use = WORKING_PROXIES.copy()
     random.shuffle(proxies_to_use)
     proxies_to_use = proxies_to_use[:count]
@@ -157,7 +148,7 @@ def send_views_batch(channel, post_id, count=30):
     if not proxies_to_use:
         return results
     
-    print(f"[VIEWS] Sending {len(proxies_to_use)} views...")
+    print(f"[VIEWS] Sending {len(proxies_to_use)} unique views...")
     
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = {
@@ -181,23 +172,6 @@ def send_views_batch(channel, post_id, count=30):
     
     return results
 
-# ============= GET REAL VIEW COUNT =============
-
-def get_real_views(channel, post_id):
-    """Get actual view count from Telegram"""
-    try:
-        url = f"https://t.me/{channel}/{post_id}?embed=1&mode=tme"
-        response = requests.get(url, timeout=10)
-        match = re.search(r'data-views="([^"]+)"', response.text)
-        if match:
-            return match.group(1)
-        match2 = re.search(r'<span class="tgme_widget_message_views">([^<]+)', response.text)
-        if match2:
-            return match2.group(1)
-        return "0"
-    except:
-        return "0"
-
 # ============= FLASK ROUTES =============
 
 @app.route('/')
@@ -208,25 +182,26 @@ def home():
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
         "total_proxies": len(WORKING_PROXIES),
+        "note": "✅ 1 view per proxy = unique views",
         "endpoints": {
             "/api/views": "GET/POST - Send views",
-            "/api/views/check": "GET - Check view count",
             "/api/proxies": "GET - Get proxy list",
             "/api/stats": "GET - Statistics"
-        }
+        },
+        "example": "/api/views?link=https://t.me/channel/10&count=50"
     })
 
 @app.route('/api/views', methods=['POST', 'GET'])
 def api_views():
-    """Send views"""
+    """Main API endpoint"""
     try:
         if request.method == 'POST':
             data = request.get_json() or {}
             link = data.get('link', '')
-            count = data.get('count', 30)
+            count = data.get('count', 50)
         else:
             link = request.args.get('link', '')
-            count = int(request.args.get('count', 30))
+            count = int(request.args.get('count', 50))
         
         if not link:
             return jsonify({"status": "error", "message": "Post link required", "developer": BOT_NAME}), 400
@@ -240,9 +215,9 @@ def api_views():
         try:
             count = int(count)
             if count < 1: count = 1
-            if count > 80: count = 80
+            if count > len(WORKING_PROXIES): count = len(WORKING_PROXIES)
         except:
-            count = 30
+            count = 50
         
         start_time = time.time()
         result = send_views_batch(channel, post_id, count)
@@ -266,34 +241,11 @@ def api_views():
             "total_proxies": len(WORKING_PROXIES),
             "errors": result["errors"][:5],
             "execution_time_ms": elapsed,
-            "message": f"✅ {result['success']} views sent!"
+            "message": f"✅ {result['success']} unique views sent!"
         })
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e), "developer": BOT_NAME}), 500
-
-@app.route('/api/views/check', methods=['GET'])
-def check_views():
-    """Check real view count"""
-    link = request.args.get('link', '')
-    if not link:
-        return jsonify({"status": "error", "message": "Link required"}), 400
-    
-    match = re.search(r't\.me/([^/]+)/(\d+)', link)
-    if not match:
-        return jsonify({"status": "error", "message": "Invalid link"}), 400
-    
-    channel, post_id = match.groups()
-    views = get_real_views(channel, post_id)
-    
-    return jsonify({
-        "status": "success",
-        "developer": BOT_NAME,
-        "channel": channel,
-        "post_id": post_id,
-        "views": views,
-        "note": "Views update with 5-10 min delay"
-    })
 
 @app.route('/api/proxies', methods=['GET'])
 def api_proxies():
@@ -317,15 +269,14 @@ def api_stats():
         "stats": {
             "total_proxies": len(WORKING_PROXIES),
             "threads": THREADS,
-            "timeout": TIMEOUT,
-            "retry_count": RETRY_COUNT
+            "timeout": TIMEOUT
         }
     })
 
 if __name__ == '__main__':
     print("=" * 50)
     print(f"🔥 BRONX ULTRA Views API")
-    print(f"✅ {len(WORKING_PROXIES)} Proxies")
+    print(f"✅ {len(WORKING_PROXIES)} Proxies = Unique Views")
     print("=" * 50)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
