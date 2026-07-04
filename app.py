@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Telegram Views API (Port 80 Proxies)
+# app.py - BRONX ULTRA Views API (Smart Proxy Filter)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -12,47 +12,106 @@ app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 50
+THREADS = 40
 TIMEOUT = 15
 RETRY_COUNT = 2
 
-# ✅ YOUR WORKING PORT 80 PROXIES
-WORKING_PROXIES = [
-    "173.245.49.35:80", "141.101.123.25:80", "172.67.176.89:80",
-    "172.67.176.18:80", "45.12.30.71:80", "45.12.30.107:80",
-    "45.12.31.84:80", "173.245.49.68:80", "172.67.72.1:80",
-    "45.12.30.233:80", "172.67.75.200:80", "141.193.213.78:80",
-    "103.21.244.138:80", "172.64.90.66:80", "172.67.142.0:80",
-    "141.101.120.98:80", "141.101.120.225:80", "141.101.121.137:80",
-    "141.101.122.76:80", "45.131.7.142:80", "188.114.96.24:80",
-    "63.141.128.38:80", "188.114.97.20:80", "172.67.154.177:80",
-    "63.141.128.11:80", "172.67.70.240:80", "45.85.119.44:80",
-    "185.170.166.74:80", "66.235.200.24:80", "159.112.235.160:80",
-    "160.153.0.25:80", "141.101.122.79:80", "63.141.128.196:80",
-    "172.67.159.204:80", "23.227.39.225:80", "172.67.211.244:80",
-    "108.162.198.248:80", "45.67.215.143:80", "45.8.211.50:80",
-    "91.193.58.130:80", "195.85.23.240:80", "172.67.181.36:80",
-    "172.67.167.57:80", "185.162.231.99:80", "172.67.180.248:80",
-    "141.101.121.131:80", "141.101.123.174:80", "45.131.6.205:80",
-    "63.141.128.10:80", "172.67.91.36:80", "199.34.228.176:80",
-    "45.12.31.35:80", "45.12.30.29:80", "185.162.229.102:80",
-    "185.162.231.45:80", "185.162.230.79:80", "45.12.30.7:80",
-    "185.162.231.130:80", "45.12.30.119:80", "172.67.179.203:80",
-    "172.67.75.186:80", "188.114.96.253:80", "172.67.144.217:80",
-    "172.67.172.29:80"
+# ✅ YOUR PROXIES (Mixed - HTTP/HTTPS/SOCKS)
+RAW_PROXIES = [
+    "206.81.31.215:80", "62.133.62.231:1081", "140.245.238.56:53",
+    "103.102.138.218:1450", "147.45.76.207:3128", "103.172.71.209:1080",
+    "103.204.211.48:32255", "103.173.138.236:1111", "103.81.194.178:80",
+    "156.232.99.59:10808", "222.228.194.131:8080", "41.203.76.166:8080",
+    "103.239.41.49:8080", "190.210.62.131:8080", "103.142.69.169:8885",
+    "97.76.251.138:8080", "179.49.113.225:999", "209.14.118.116:999",
+    "195.62.50.25:8080", "103.135.189.146:82", "38.156.235.173:999",
+    "43.246.201.53:23654", "62.133.62.184:1082", "82.114.228.67:1080",
+    "117.236.124.166:3128", "62.133.62.249:1082", "51.161.142.97:8080",
+    "190.2.214.66:999", "103.242.104.150:8080", "5.202.191.225:8080",
+    "62.60.149.161:3128", "45.95.233.237:1082", "91.203.8.74:8080",
+    "47.81.56.193:8888", "185.230.190.195:3128", "45.168.244.168:80",
+    "207.246.68.214:3129", "178.250.156.112:443", "47.83.168.191:4000",
+    "77.110.113.236:8080", "81.168.119.85:443", "159.223.87.50:443",
+    "62.133.62.12:1081", "119.95.188.3:8082", "45.95.232.35:3128",
+    "203.162.13.26:6868", "103.170.22.145:8080", "113.160.132.26:8080",
+    "187.72.215.33:3128", "132.243.234.171:9443", "103.82.20.76:8080",
+    "34.87.80.22:130000", "103.129.127.244:8088", "200.227.89.50:3128",
+    "77.221.158.175:3128", "203.162.13.222:6868", "159.223.201.213:3128",
+    "103.167.61.162:3128", "202.28.194.139:31280", "165.154.7.156:8888",
+    "80.151.57.81:8080", "34.96.238.40:8080", "43.153.199.126:8888",
+    "49.51.228.35:81", "206.189.144.164:10808", "71.198.208.169:443",
+    "157.180.84.115:443", "185.196.61.251:8081", "91.107.182.124:82",
+    "151.243.153.157:8118", "34.93.219.118:80", "51.178.253.9:880",
+    "86.62.2.253:128", "14.143.222.113:57748", "174.137.134.182:2999",
+    "190.2.145.103:3128", "152.67.154.35:3128", "104.194.146.9:80",
+    "159.195.69.220:8888", "64.188.77.221:3128", "159.195.49.27:8888",
+    "54.38.138.60:3128", "185.121.13.73:3128", "193.29.224.20:3128",
+    "65.109.65.239:18080", "45.157.140.12:1080", "212.34.146.118:3128",
+    "91.188.213.143:1080", "72.56.238.99:9090", "185.181.209.34:8080",
+    "82.146.38.71:443", "176.12.65.24:443", "34.43.46.91:80",
+    "92.118.112.25:1082", "23.94.112.168:8080", "67.43.112.129:8080",
+    "43.162.83.26:3128", "23.224.193.45:3128", "129.146.127.232:3128",
+    "107.175.44.109:3128"
 ]
 
-# ✅ Remove duplicates
-WORKING_PROXIES = list(set(WORKING_PROXIES))
-print(f"[PROXY] Loaded {len(WORKING_PROXIES)} Port 80 proxies")
+# ✅ Smart Filter - Sirf HTTP/HTTPS proxies
+def filter_proxies():
+    """Filter only HTTP/HTTPS proxies (remove SOCKS)"""
+    filtered = []
+    for proxy in RAW_PROXIES:
+        ip, port = proxy.split(':')
+        port = int(port)
+        # ✅ Valid HTTP/HTTPS ports
+        if port in [80, 443, 8080, 3128, 8088, 8888, 8090, 8118, 8443, 9443, 18080]:
+            filtered.append(proxy)
+        # ✅ Custom ports but valid format
+        elif port > 1000 and port < 65535:
+            # Skip known SOCKS ports
+            if port not in [1080, 1081, 1082, 1088, 9050, 9150]:
+                filtered.append(proxy)
+    return list(set(filtered))
+
+WORKING_PROXIES = filter_proxies()
+print(f"[PROXY] Raw: {len(RAW_PROXIES)}, Filtered: {len(WORKING_PROXIES)}")
+
+# ============= PROXY TESTER =============
+
+def test_proxy(proxy):
+    """Test if proxy is working"""
+    try:
+        proxies = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
+        response = requests.get(
+            'https://t.me',
+            proxies=proxies,
+            timeout=5,
+            verify=False
+        )
+        return response.status_code in [200, 403, 404]
+    except:
+        return False
+
+def get_working_proxies(limit=50):
+    """Get working proxies with testing"""
+    global WORKING_PROXIES
+    tested = []
+    
+    # Test first 20 proxies
+    for proxy in WORKING_PROXIES[:20]:
+        if test_proxy(proxy):
+            tested.append(proxy)
+    
+    if tested:
+        return tested[:limit]
+    return WORKING_PROXIES[:limit]
 
 # ============= TELEGRAM VIEW SENDER =============
 
 def send_telegram_view(proxy, channel, post_id, retry=0):
-    """Send view using HTTP proxy"""
+    """Send view using proxy"""
     try:
         session = requests.Session()
         
+        # ✅ Auto-detect proxy type
         proxies = {
             'http': f'http://{proxy}',
             'https': f'http://{proxy}'
@@ -78,7 +137,8 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
             headers=headers,
             proxies=proxies,
             timeout=TIMEOUT,
-            verify=False  # ✅ SSL verification off for faster response
+            verify=False,
+            allow_redirects=True
         )
         
         if response.status_code != 200:
@@ -122,23 +182,17 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
                 return send_telegram_view(proxy, channel, post_id, retry + 1)
             return False, f"View status: {view_response.status_code}"
         
-    except requests.exceptions.ProxyError:
-        return False, "Proxy error"
-    except requests.exceptions.Timeout:
-        return False, "Timeout"
-    except requests.exceptions.ConnectionError:
-        return False, "Connection error"
     except Exception as e:
         if retry < RETRY_COUNT:
             time.sleep(0.5)
             return send_telegram_view(proxy, channel, post_id, retry + 1)
         return False, str(e)[:40]
 
-def send_views_batch(channel, post_id, count=100):
+def send_views_batch(channel, post_id, count=50):
     """Send views using proxies"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
-    proxies_to_use = WORKING_PROXIES.copy()
+    proxies_to_use = get_working_proxies(count)
     random.shuffle(proxies_to_use)
     proxies_to_use = proxies_to_use[:count]
     
@@ -175,17 +229,17 @@ def send_views_batch(channel, post_id, count=100):
 def home():
     return jsonify({
         "status": "✅ ONLINE",
-        "service": "BRONX ULTRA Telegram Views API",
+        "service": "BRONX ULTRA Views API",
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
-        "proxies_loaded": len(WORKING_PROXIES),
-        "note": "✅ Port 80 proxies - Working",
+        "total_proxies": len(WORKING_PROXIES),
+        "note": "✅ Smart filter - HTTP/HTTPS only",
         "endpoints": {
             "/api/views": "GET/POST - Send views",
             "/api/proxies": "GET - Get proxy list",
             "/api/stats": "GET - Statistics"
         },
-        "example": "/api/views?link=https://t.me/channel/10&count=50"
+        "example": "/api/views?link=https://t.me/channel/10&count=30"
     })
 
 @app.route('/api/views', methods=['POST', 'GET'])
@@ -195,10 +249,10 @@ def api_views():
         if request.method == 'POST':
             data = request.get_json() or {}
             link = data.get('link', '')
-            count = data.get('count', 100)
+            count = data.get('count', 30)
         else:
             link = request.args.get('link', '')
-            count = int(request.args.get('count', 100))
+            count = int(request.args.get('count', 30))
         
         if not link:
             return jsonify({"status": "error", "message": "Post link required", "developer": BOT_NAME}), 400
@@ -212,9 +266,9 @@ def api_views():
         try:
             count = int(count)
             if count < 1: count = 1
-            if count > len(WORKING_PROXIES): count = len(WORKING_PROXIES)
+            if count > 80: count = 80
         except:
-            count = 50
+            count = 30
         
         start_time = time.time()
         result = send_views_batch(channel, post_id, count)
@@ -274,7 +328,7 @@ def api_stats():
 if __name__ == '__main__':
     print("=" * 50)
     print(f"🔥 BRONX ULTRA Views API")
-    print(f"✅ {len(WORKING_PROXIES)} Port 80 Proxies")
+    print(f"✅ {len(WORKING_PROXIES)} HTTP/HTTPS Proxies")
     print("=" * 50)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
