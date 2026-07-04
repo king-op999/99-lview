@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Views API (Updated Sources)
+# app.py - BRONX ULTRA Views API (Advanced Multi-Session)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -7,16 +7,19 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import os
+from queue import Queue
+import sys
 
 app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 50
-TIMEOUT = 15
+THREADS = 100  # ✅ Multi-threaded
+TIMEOUT = 10
 RETRY_COUNT = 1
+MAX_PROXIES = 500  # ✅ Maximum proxies to collect
 
-# ✅ UPDATED HTTP SOURCES (SOCKS HATAYE)
+# ✅ HTTP SOURCES (Multi-session)
 HTTP_SOURCES = [
     "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all",
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
@@ -31,60 +34,95 @@ HTTP_SOURCES = [
     "https://openproxylist.xyz/http.txt",
 ]
 
-# Regex to match IP:PORT
+# Regex for IP:PORT
 IP_REGEX = re.compile(r'(?:^|\D)?((?:(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])):(?:(?:\d|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])))(?:\D|$)')
 
-# Store proxies
-proxies_list = []
+# ============= PROXY QUEUE =============
+proxy_queue = Queue()
 proxy_lock = threading.Lock()
-last_update = 0
-UPDATE_INTERVAL = 600
+proxies_list = []
+scraping_complete = False
+total_scraped = 0
 
-# ============= PROXY SCRAPER =============
+# ============= MULTI-SESSION SCRAPER =============
 
-def scrap_proxies():
-    """Scrape HTTP proxies only"""
-    new_proxies = []
-    for url in HTTP_SOURCES:
-        try:
-            response = requests.get(url, timeout=20, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
+def scrap_single_source(url):
+    """Scrape proxies from a single source"""
+    global total_scraped
+    try:
+        response = requests.get(url, timeout=15, headers={
+            'User-Agent': random.choice([
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
+            ])
+        })
+        
+        if response.status_code == 200:
+            matches = IP_REGEX.findall(response.text)
+            proxies = []
+            for match in matches:
+                proxy = match[0] if isinstance(match, tuple) else match
+                if proxy and '303.303.303' not in proxy and '0.0.0.0' not in proxy:
+                    proxies.append(proxy)
             
-            if response.status_code == 200:
-                matches = IP_REGEX.findall(response.text)
-                for match in matches:
-                    proxy = match[0] if isinstance(match, tuple) else match
-                    if proxy and '303.303.303' not in proxy:
-                        new_proxies.append(proxy)
-        except Exception as e:
-            pass
-    
-    return list(set(new_proxies))
+            with proxy_lock:
+                for proxy in proxies:
+                    if proxy not in proxies_list:
+                        proxies_list.append(proxy)
+                        proxy_queue.put(proxy)
+                total_scraped += len(proxies)
+            
+            print(f"[SCRAP] ✅ {url[:50]}... -> {len(proxies)} proxies")
+            return len(proxies)
+    except Exception as e:
+        print(f"[SCRAP] ❌ {url[:50]}... -> Error")
+        return 0
 
-def update_proxies():
-    """Update proxy list"""
-    global proxies_list, last_update
+def multi_scrape():
+    """Scrape all sources simultaneously"""
+    global scraping_complete
+    print(f"[SCRAP] Starting multi-session scrape from {len(HTTP_SOURCES)} sources...")
     
-    print("[PROXY] Starting HTTP proxy update...")
-    result = scrap_proxies()
+    with ThreadPoolExecutor(max_workers=len(HTTP_SOURCES)) as executor:
+        futures = {executor.submit(scrap_single_source, url): url for url in HTTP_SOURCES}
+        
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                future.result()
+            except:
+                pass
     
-    with proxy_lock:
-        proxies_list = result
-    
-    last_update = time.time()
-    print(f"[PROXY] Loaded {len(proxies_list)} HTTP proxies")
+    scraping_complete = True
+    print(f"[SCRAP] ✅ Completed! Total: {len(proxies_list)} unique proxies")
 
 def get_proxies(limit=100):
-    """Get proxies from list"""
-    current_time = time.time()
-    if current_time - last_update > UPDATE_INTERVAL or not proxies_list:
-        threading.Thread(target=update_proxies, daemon=True).start()
+    """Get proxies from queue"""
+    global scraping_complete
+    
+    if not scraping_complete and len(proxies_list) < 50:
+        return []
+    
+    proxies = []
+    try:
+        for _ in range(limit):
+            if not proxy_queue.empty():
+                proxy = proxy_queue.get_nowait()
+                if proxy and proxy not in proxies:
+                    proxies.append(proxy)
+            else:
+                # If queue empty, get from list
+                with proxy_lock:
+                    remaining = [p for p in proxies_list if p not in proxies]
+                    proxies.extend(remaining[:limit - len(proxies)])
+                break
+    except:
+        pass
+    
+    if not proxies and proxies_list:
         with proxy_lock:
-            proxies = proxies_list.copy()
-    else:
-        with proxy_lock:
-            proxies = proxies_list.copy()
+            proxies = proxies_list[:limit]
     
     random.shuffle(proxies)
     return proxies[:limit]
@@ -167,21 +205,19 @@ def send_telegram_view(proxy, channel, post_id):
         return False, str(e)[:40]
 
 def send_views_batch(channel, post_id, count=50):
-    """Send 1 view per proxy"""
+    """Send views using proxies"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
-    proxies = get_proxies(count * 2)
+    proxies = get_proxies(count)
     if not proxies:
         return results
     
-    proxies_to_use = proxies[:count]
-    
-    print(f"[VIEWS] Sending {len(proxies_to_use)} unique views...")
+    print(f"[VIEWS] Sending {len(proxies)} unique views...")
     
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = {
             executor.submit(send_telegram_view, proxy, channel, post_id): proxy
-            for proxy in proxies_to_use
+            for proxy in proxies
         }
         
         for future in as_completed(futures):
@@ -210,11 +246,19 @@ def home():
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
         "total_proxies": len(proxies_list),
-        "note": "✅ HTTP only - Updated sources",
+        "scraping_complete": scraping_complete,
+        "mode": "⚡ Multi-Session Scraper",
+        "features": [
+            "✅ All sources scraped simultaneously",
+            "✅ No proxy missed",
+            "✅ Instant proxy queue",
+            "✅ 100 concurrent views"
+        ],
         "endpoints": {
             "/api/views": "GET/POST - Send views",
             "/api/proxies": "GET - Get proxy list",
-            "/api/stats": "GET - Statistics"
+            "/api/stats": "GET - Statistics",
+            "/api/scrape": "GET - Force scrape"
         },
         "example": "/api/views?link=https://t.me/channel/10&count=50"
     })
@@ -243,7 +287,7 @@ def api_views():
         try:
             count = int(count)
             if count < 1: count = 1
-            if count > 100: count = 100
+            if count > 300: count = 300
         except:
             count = 50
         
@@ -298,17 +342,31 @@ def api_stats():
             "total_proxies": len(proxies_list),
             "threads": THREADS,
             "timeout": TIMEOUT,
-            "last_update": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_update))
+            "sources": len(HTTP_SOURCES),
+            "scraping_complete": scraping_complete
         }
     })
 
+@app.route('/api/scrape', methods=['GET'])
+def api_scrape():
+    """Force scrape proxies"""
+    threading.Thread(target=multi_scrape, daemon=True).start()
+    return jsonify({
+        "status": "success",
+        "message": "Scraping started in background",
+        "developer": BOT_NAME
+    })
+
+# ============= STARTUP =============
+print("=" * 60)
+print(f"🔥 BRONX ULTRA Views API - Advanced Multi-Session")
+print(f"📡 Sources: {len(HTTP_SOURCES)}")
+print(f"⚡ Mode: All sources scraped simultaneously")
+print("=" * 60)
+
+# Start multi-scraping in background
+threading.Thread(target=multi_scrape, daemon=True).start()
+
 if __name__ == '__main__':
-    print("=" * 50)
-    print(f"🔥 BRONX ULTRA Views API")
-    print(f"✅ Updated HTTP Sources")
-    print("=" * 50)
-    
-    threading.Thread(target=update_proxies, daemon=True).start()
-    
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
