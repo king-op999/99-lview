@@ -1,5 +1,5 @@
-# app.py - BRONX ULTRA Views API (Advanced Multi-Session)
-from flask import Flask, request, jsonify
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, emit
 import requests
 import re
 import time
@@ -7,20 +7,24 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import os
-from queue import Queue
-import sys
+import json
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'bronx-ultra-secret'
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 100  # ✅ Multi-threaded
-TIMEOUT = 10
-RETRY_COUNT = 1
-MAX_PROXIES = 500  # ✅ Maximum proxies to collect
+THREADS = 50
+TIMEOUT = 15
+MAX_VIEWS = 500
+running = False
+current_task = None
+view_log = []
+total_sent = 0
 
-# ✅ HTTP SOURCES (Multi-session)
-HTTP_SOURCES = [
+# ============= PROXY SOURCES =============
+SOURCES = [
     "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all",
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
     "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
@@ -34,106 +38,45 @@ HTTP_SOURCES = [
     "https://openproxylist.xyz/http.txt",
 ]
 
-# Regex for IP:PORT
 IP_REGEX = re.compile(r'(?:^|\D)?((?:(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])):(?:(?:\d|[1-9]\d{1,3}|[1-5]\d{4}|6[0-4]\d{3}|65[0-4]\d{2}|655[0-2]\d|6553[0-5])))(?:\D|$)')
 
-# ============= PROXY QUEUE =============
-proxy_queue = Queue()
-proxy_lock = threading.Lock()
 proxies_list = []
-scraping_complete = False
-total_scraped = 0
 
-# ============= MULTI-SESSION SCRAPER =============
-
-def scrap_single_source(url):
-    """Scrape proxies from a single source"""
-    global total_scraped
-    try:
-        response = requests.get(url, timeout=15, headers={
-            'User-Agent': random.choice([
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
-            ])
-        })
-        
-        if response.status_code == 200:
-            matches = IP_REGEX.findall(response.text)
-            proxies = []
-            for match in matches:
-                proxy = match[0] if isinstance(match, tuple) else match
-                if proxy and '303.303.303' not in proxy and '0.0.0.0' not in proxy:
-                    proxies.append(proxy)
-            
-            with proxy_lock:
-                for proxy in proxies:
-                    if proxy not in proxies_list:
-                        proxies_list.append(proxy)
-                        proxy_queue.put(proxy)
-                total_scraped += len(proxies)
-            
-            print(f"[SCRAP] ✅ {url[:50]}... -> {len(proxies)} proxies")
-            return len(proxies)
-    except Exception as e:
-        print(f"[SCRAP] ❌ {url[:50]}... -> Error")
-        return 0
-
-def multi_scrape():
-    """Scrape all sources simultaneously"""
-    global scraping_complete
-    print(f"[SCRAP] Starting multi-session scrape from {len(HTTP_SOURCES)} sources...")
-    
-    with ThreadPoolExecutor(max_workers=len(HTTP_SOURCES)) as executor:
-        futures = {executor.submit(scrap_single_source, url): url for url in HTTP_SOURCES}
-        
-        for future in as_completed(futures):
-            url = futures[future]
-            try:
-                future.result()
-            except:
-                pass
-    
-    scraping_complete = True
-    print(f"[SCRAP] ✅ Completed! Total: {len(proxies_list)} unique proxies")
+def scrap_proxies():
+    """Scrape proxies from all sources"""
+    global proxies_list
+    new_proxies = []
+    for url in SOURCES:
+        try:
+            response = requests.get(url, timeout=15, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            if response.status_code == 200:
+                matches = IP_REGEX.findall(response.text)
+                for match in matches:
+                    proxy = match[0] if isinstance(match, tuple) else match
+                    if proxy and '303.303.303' not in proxy and '0.0.0.0' not in proxy:
+                        new_proxies.append(proxy)
+        except:
+            pass
+    proxies_list = list(set(new_proxies))
+    socketio.emit('log', {'message': f'✅ Loaded {len(proxies_list)} proxies'})
+    return proxies_list
 
 def get_proxies(limit=100):
-    """Get proxies from queue"""
-    global scraping_complete
-    
-    if not scraping_complete and len(proxies_list) < 50:
-        return []
-    
-    proxies = []
-    try:
-        for _ in range(limit):
-            if not proxy_queue.empty():
-                proxy = proxy_queue.get_nowait()
-                if proxy and proxy not in proxies:
-                    proxies.append(proxy)
-            else:
-                # If queue empty, get from list
-                with proxy_lock:
-                    remaining = [p for p in proxies_list if p not in proxies]
-                    proxies.extend(remaining[:limit - len(proxies)])
-                break
-    except:
-        pass
-    
-    if not proxies and proxies_list:
-        with proxy_lock:
-            proxies = proxies_list[:limit]
-    
-    random.shuffle(proxies)
-    return proxies[:limit]
+    """Get proxies from list"""
+    global proxies_list
+    if not proxies_list:
+        scrap_proxies()
+    random.shuffle(proxies_list)
+    return proxies_list[:limit]
 
 # ============= TELEGRAM VIEW SENDER =============
 
 def send_telegram_view(proxy, channel, post_id):
-    """Send 1 view using 1 proxy"""
+    """Send 1 view"""
     try:
         session = requests.Session()
-        
         proxies = {
             'http': f'http://{proxy}',
             'https': f'http://{proxy}'
@@ -143,7 +86,6 @@ def send_telegram_view(proxy, channel, post_id):
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
         ])
         
         headers = {
@@ -204,169 +146,143 @@ def send_telegram_view(proxy, channel, post_id):
     except Exception as e:
         return False, str(e)[:40]
 
-def send_views_batch(channel, post_id, count=50):
-    """Send views using proxies"""
-    results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
+def send_views_task(channel, post_id, count):
+    """Main task to send views"""
+    global running, total_sent, view_log
     
-    proxies = get_proxies(count)
+    running = True
+    total_sent = 0
+    view_log = []
+    
+    socketio.emit('status', {'status': 'running', 'message': '🔄 Starting...'})
+    
+    # Scrape proxies
+    proxies = get_proxies(count * 2)
     if not proxies:
-        return results
+        socketio.emit('log', {'message': '❌ No proxies available!'})
+        running = False
+        return
     
-    print(f"[VIEWS] Sending {len(proxies)} unique views...")
+    proxies_to_use = proxies[:count]
+    socketio.emit('log', {'message': f'📡 Using {len(proxies_to_use)} proxies'})
     
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = {
             executor.submit(send_telegram_view, proxy, channel, post_id): proxy
-            for proxy in proxies
+            for proxy in proxies_to_use
         }
         
+        completed = 0
         for future in as_completed(futures):
+            if not running:
+                socketio.emit('log', {'message': '⏹️ Stopped by user'})
+                break
+            
             proxy = futures[future]
             try:
                 success, message = future.result(timeout=TIMEOUT + 5)
+                completed += 1
                 if success:
-                    results["success"] += 1
-                    results["proxies_used"].append(proxy)
+                    total_sent += 1
+                    view_log.append(f"✅ {proxy} - Success")
+                    socketio.emit('view', {'proxy': proxy, 'status': 'success', 'total': total_sent})
                 else:
-                    results["failed"] += 1
-                    if len(results["errors"]) < 8:
-                        results["errors"].append(f"{proxy}: {message}")
+                    view_log.append(f"❌ {proxy} - {message}")
+                    socketio.emit('view', {'proxy': proxy, 'status': 'failed'})
+                
+                # Update progress
+                progress = int((completed / len(proxies_to_use)) * 100)
+                socketio.emit('progress', {'progress': progress, 'sent': total_sent, 'total': len(proxies_to_use)})
+                
             except Exception as e:
-                results["failed"] += 1
+                view_log.append(f"❌ {proxy} - Error")
     
-    return results
+    running = False
+    socketio.emit('status', {'status': 'completed', 'message': f'✅ Completed! Sent {total_sent} views'})
+    socketio.emit('log', {'message': f'✅ Task completed! Sent {total_sent} views'})
 
 # ============= FLASK ROUTES =============
 
 @app.route('/')
-def home():
-    return jsonify({
-        "status": "✅ ONLINE",
-        "service": "BRONX ULTRA Views API",
-        "developer": BOT_NAME,
-        "credit": "BRONX ULTRA",
-        "total_proxies": len(proxies_list),
-        "scraping_complete": scraping_complete,
-        "mode": "⚡ Multi-Session Scraper",
-        "features": [
-            "✅ All sources scraped simultaneously",
-            "✅ No proxy missed",
-            "✅ Instant proxy queue",
-            "✅ 100 concurrent views"
-        ],
-        "endpoints": {
-            "/api/views": "GET/POST - Send views",
-            "/api/proxies": "GET - Get proxy list",
-            "/api/stats": "GET - Statistics",
-            "/api/scrape": "GET - Force scrape"
-        },
-        "example": "/api/views?link=https://t.me/channel/10&count=50"
-    })
+def index():
+    """Web interface"""
+    return render_template('index.html', bot_name=BOT_NAME)
 
-@app.route('/api/views', methods=['POST', 'GET'])
-def api_views():
-    """Main API endpoint"""
-    try:
-        if request.method == 'POST':
-            data = request.get_json() or {}
-            link = data.get('link', '')
-            count = data.get('count', 50)
-        else:
-            link = request.args.get('link', '')
-            count = int(request.args.get('count', 50))
-        
-        if not link:
-            return jsonify({"status": "error", "message": "Post link required", "developer": BOT_NAME}), 400
-        
-        match = re.search(r't\.me/([^/]+)/(\d+)', link)
-        if not match:
-            return jsonify({"status": "error", "message": "Invalid link", "developer": BOT_NAME}), 400
-        
-        channel, post_id = match.groups()
-        
-        try:
-            count = int(count)
-            if count < 1: count = 1
-            if count > 300: count = 300
-        except:
-            count = 50
-        
-        start_time = time.time()
-        result = send_views_batch(channel, post_id, count)
-        elapsed = round((time.time() - start_time) * 1000, 2)
-        
-        total = result["success"] + result["failed"]
-        success_rate = round((result["success"] / total * 100), 2) if total > 0 else 0
-        
-        return jsonify({
-            "status": "success",
-            "developer": BOT_NAME,
-            "credit": "BRONX ULTRA",
-            "link": link,
-            "channel": channel,
-            "post_id": post_id,
-            "requested": count,
-            "success": result["success"],
-            "failed": result["failed"],
-            "success_rate": f"{success_rate}%",
-            "proxies_used": len(result["proxies_used"]),
-            "total_proxies": len(proxies_list),
-            "errors": result["errors"][:5],
-            "execution_time_ms": elapsed,
-            "message": f"✅ {result['success']} unique views sent!"
-        })
-        
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e), "developer": BOT_NAME}), 500
-
-@app.route('/api/proxies', methods=['GET'])
-def api_proxies():
-    """Get proxy list"""
-    limit = int(request.args.get('limit', 20))
-    proxies = get_proxies(limit)
+@app.route('/api/start', methods=['POST'])
+def start_task():
+    """Start views task"""
+    global current_task, running
     
+    if running:
+        return jsonify({'status': 'error', 'message': 'Task already running'})
+    
+    data = request.get_json()
+    link = data.get('link', '').strip()
+    count = int(data.get('count', 50))
+    
+    if not link:
+        return jsonify({'status': 'error', 'message': 'Link required'})
+    
+    match = re.search(r't\.me/([^/]+)/(\d+)', link)
+    if not match:
+        return jsonify({'status': 'error', 'message': 'Invalid link format'})
+    
+    channel, post_id = match.groups()
+    
+    if count < 1:
+        count = 1
+    if count > MAX_VIEWS:
+        count = MAX_VIEWS
+    
+    # Start in background
+    thread = threading.Thread(target=send_views_task, args=(channel, post_id, count))
+    thread.daemon = True
+    thread.start()
+    current_task = thread
+    
+    return jsonify({'status': 'success', 'message': 'Task started'})
+
+@app.route('/api/stop', methods=['POST'])
+def stop_task():
+    """Stop running task"""
+    global running
+    running = False
+    return jsonify({'status': 'success', 'message': 'Stopping...'})
+
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Get current status"""
+    global running, total_sent
     return jsonify({
-        "status": "success",
-        "developer": BOT_NAME,
-        "total_proxies": len(proxies_list),
-        "proxies": proxies
+        'running': running,
+        'sent': total_sent,
+        'proxies': len(proxies_list)
     })
 
-@app.route('/api/stats', methods=['GET'])
-def api_stats():
-    """Statistics"""
-    return jsonify({
-        "status": "success",
-        "developer": BOT_NAME,
-        "stats": {
-            "total_proxies": len(proxies_list),
-            "threads": THREADS,
-            "timeout": TIMEOUT,
-            "sources": len(HTTP_SOURCES),
-            "scraping_complete": scraping_complete
-        }
-    })
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Get recent logs"""
+    global view_log
+    return jsonify({'logs': view_log[-50:]})
 
-@app.route('/api/scrape', methods=['GET'])
-def api_scrape():
-    """Force scrape proxies"""
-    threading.Thread(target=multi_scrape, daemon=True).start()
-    return jsonify({
-        "status": "success",
-        "message": "Scraping started in background",
-        "developer": BOT_NAME
-    })
+@socketio.on('connect')
+def handle_connect():
+    emit('log', {'message': '🟢 Connected to server'})
+    emit('status', {'status': 'ready', 'message': '✅ Ready'})
 
-# ============= STARTUP =============
-print("=" * 60)
-print(f"🔥 BRONX ULTRA Views API - Advanced Multi-Session")
-print(f"📡 Sources: {len(HTTP_SOURCES)}")
-print(f"⚡ Mode: All sources scraped simultaneously")
-print("=" * 60)
-
-# Start multi-scraping in background
-threading.Thread(target=multi_scrape, daemon=True).start()
+@socketio.on('disconnect')
+def handle_disconnect():
+    pass
 
 if __name__ == '__main__':
+    # Initial proxy load
+    print("=" * 60)
+    print("🔥 BRONX ULTRA Views API + Web Interface")
+    print(f"🤖 Developer: {BOT_NAME}")
+    print("=" * 60)
+    
+    # Load proxies in background
+    threading.Thread(target=scrap_proxies, daemon=True).start()
+    
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
