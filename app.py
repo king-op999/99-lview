@@ -1,4 +1,4 @@
-# app.py - BRONX ULTRA Views API (Smart Proxy Filter)
+# app.py - BRONX ULTRA Views API (Fixed)
 from flask import Flask, request, jsonify
 import requests
 import re
@@ -12,12 +12,12 @@ app = Flask(__name__)
 
 # ============= CONFIG =============
 BOT_NAME = "@BRONX_ULTRA"
-THREADS = 40
+THREADS = 30
 TIMEOUT = 15
 RETRY_COUNT = 2
 
-# ✅ YOUR PROXIES (Mixed - HTTP/HTTPS/SOCKS)
-RAW_PROXIES = [
+# ✅ ALL PROXIES (HTTP/HTTPS)
+PROXIES = [
     "206.81.31.215:80", "62.133.62.231:1081", "140.245.238.56:53",
     "103.102.138.218:1450", "147.45.76.207:3128", "103.172.71.209:1080",
     "103.204.211.48:32255", "103.173.138.236:1111", "103.81.194.178:80",
@@ -54,83 +54,41 @@ RAW_PROXIES = [
     "107.175.44.109:3128"
 ]
 
-# ✅ Smart Filter - Sirf HTTP/HTTPS proxies
-def filter_proxies():
-    """Filter only HTTP/HTTPS proxies (remove SOCKS)"""
-    filtered = []
-    for proxy in RAW_PROXIES:
-        ip, port = proxy.split(':')
-        port = int(port)
-        # ✅ Valid HTTP/HTTPS ports
-        if port in [80, 443, 8080, 3128, 8088, 8888, 8090, 8118, 8443, 9443, 18080]:
-            filtered.append(proxy)
-        # ✅ Custom ports but valid format
-        elif port > 1000 and port < 65535:
-            # Skip known SOCKS ports
-            if port not in [1080, 1081, 1082, 1088, 9050, 9150]:
-                filtered.append(proxy)
-    return list(set(filtered))
-
-WORKING_PROXIES = filter_proxies()
-print(f"[PROXY] Raw: {len(RAW_PROXIES)}, Filtered: {len(WORKING_PROXIES)}")
-
-# ============= PROXY TESTER =============
-
-def test_proxy(proxy):
-    """Test if proxy is working"""
-    try:
-        proxies = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
-        response = requests.get(
-            'https://t.me',
-            proxies=proxies,
-            timeout=5,
-            verify=False
-        )
-        return response.status_code in [200, 403, 404]
-    except:
-        return False
-
-def get_working_proxies(limit=50):
-    """Get working proxies with testing"""
-    global WORKING_PROXIES
-    tested = []
-    
-    # Test first 20 proxies
-    for proxy in WORKING_PROXIES[:20]:
-        if test_proxy(proxy):
-            tested.append(proxy)
-    
-    if tested:
-        return tested[:limit]
-    return WORKING_PROXIES[:limit]
+# ✅ Filter working proxies
+WORKING_PROXIES = list(set([p for p in PROXIES if p and ':' in p]))
+print(f"[PROXY] Loaded {len(WORKING_PROXIES)} proxies")
 
 # ============= TELEGRAM VIEW SENDER =============
 
 def send_telegram_view(proxy, channel, post_id, retry=0):
-    """Send view using proxy"""
+    """Send view with proper headers"""
     try:
         session = requests.Session()
         
-        # ✅ Auto-detect proxy type
+        # ✅ Random User-Agent for each request
+        user_agent = random.choice([
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        ])
+        
         proxies = {
             'http': f'http://{proxy}',
             'https': f'http://{proxy}'
         }
         
         headers = {
-            'User-Agent': random.choice([
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/119.0.0.0',
-            ]),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
-            'Connection': 'close'
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
-        # Step 1: Get post page
+        # ✅ Step 1: Get post page with embed
         url = f"https://t.me/{channel}/{post_id}"
         response = session.get(
             f"{url}?embed=1&mode=tme",
@@ -143,11 +101,11 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
         
         if response.status_code != 200:
             if retry < RETRY_COUNT:
-                time.sleep(0.5)
+                time.sleep(1)
                 return send_telegram_view(proxy, channel, post_id, retry + 1)
             return False, f"Status: {response.status_code}"
         
-        # Step 2: Extract view token
+        # ✅ Step 2: Extract view token
         view_match = re.search(r'data-view="([^"]+)"', response.text)
         if not view_match:
             return False, "No token"
@@ -155,7 +113,7 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
         view_token = view_match.group(1)
         cookies = session.cookies.get_dict()
         
-        # Step 3: Send view
+        # ✅ Step 3: Send view with proper cookies
         view_response = session.get(
             'https://t.me/v/',
             params={'views': view_token},
@@ -167,7 +125,7 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
             headers={
                 'Referer': f'https://t.me/{channel}/{post_id}?embed=1&mode=tme',
                 'X-Requested-With': 'XMLHttpRequest',
-                'User-Agent': headers['User-Agent']
+                'User-Agent': user_agent
             },
             proxies=proxies,
             timeout=TIMEOUT,
@@ -178,21 +136,21 @@ def send_telegram_view(proxy, channel, post_id, retry=0):
             return True, "Success"
         else:
             if retry < RETRY_COUNT:
-                time.sleep(0.5)
+                time.sleep(1)
                 return send_telegram_view(proxy, channel, post_id, retry + 1)
             return False, f"View status: {view_response.status_code}"
         
     except Exception as e:
         if retry < RETRY_COUNT:
-            time.sleep(0.5)
+            time.sleep(1)
             return send_telegram_view(proxy, channel, post_id, retry + 1)
         return False, str(e)[:40]
 
-def send_views_batch(channel, post_id, count=50):
-    """Send views using proxies"""
+def send_views_batch(channel, post_id, count=30):
+    """Send views with better headers"""
     results = {"success": 0, "failed": 0, "errors": [], "proxies_used": []}
     
-    proxies_to_use = get_working_proxies(count)
+    proxies_to_use = WORKING_PROXIES.copy()
     random.shuffle(proxies_to_use)
     proxies_to_use = proxies_to_use[:count]
     
@@ -223,6 +181,23 @@ def send_views_batch(channel, post_id, count=50):
     
     return results
 
+# ============= GET REAL VIEW COUNT =============
+
+def get_real_views(channel, post_id):
+    """Get actual view count from Telegram"""
+    try:
+        url = f"https://t.me/{channel}/{post_id}?embed=1&mode=tme"
+        response = requests.get(url, timeout=10)
+        match = re.search(r'data-views="([^"]+)"', response.text)
+        if match:
+            return match.group(1)
+        match2 = re.search(r'<span class="tgme_widget_message_views">([^<]+)', response.text)
+        if match2:
+            return match2.group(1)
+        return "0"
+    except:
+        return "0"
+
 # ============= FLASK ROUTES =============
 
 @app.route('/')
@@ -233,18 +208,17 @@ def home():
         "developer": BOT_NAME,
         "credit": "BRONX ULTRA",
         "total_proxies": len(WORKING_PROXIES),
-        "note": "✅ Smart filter - HTTP/HTTPS only",
         "endpoints": {
             "/api/views": "GET/POST - Send views",
+            "/api/views/check": "GET - Check view count",
             "/api/proxies": "GET - Get proxy list",
             "/api/stats": "GET - Statistics"
-        },
-        "example": "/api/views?link=https://t.me/channel/10&count=30"
+        }
     })
 
 @app.route('/api/views', methods=['POST', 'GET'])
 def api_views():
-    """Main API endpoint"""
+    """Send views"""
     try:
         if request.method == 'POST':
             data = request.get_json() or {}
@@ -292,15 +266,38 @@ def api_views():
             "total_proxies": len(WORKING_PROXIES),
             "errors": result["errors"][:5],
             "execution_time_ms": elapsed,
-            "message": f"✅ {result['success']} views! (Rate: {success_rate}%)"
+            "message": f"✅ {result['success']} views sent!"
         })
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e), "developer": BOT_NAME}), 500
 
+@app.route('/api/views/check', methods=['GET'])
+def check_views():
+    """Check real view count"""
+    link = request.args.get('link', '')
+    if not link:
+        return jsonify({"status": "error", "message": "Link required"}), 400
+    
+    match = re.search(r't\.me/([^/]+)/(\d+)', link)
+    if not match:
+        return jsonify({"status": "error", "message": "Invalid link"}), 400
+    
+    channel, post_id = match.groups()
+    views = get_real_views(channel, post_id)
+    
+    return jsonify({
+        "status": "success",
+        "developer": BOT_NAME,
+        "channel": channel,
+        "post_id": post_id,
+        "views": views,
+        "note": "Views update with 5-10 min delay"
+    })
+
 @app.route('/api/proxies', methods=['GET'])
 def api_proxies():
-    """Get working proxies"""
+    """Get proxy list"""
     limit = int(request.args.get('limit', 20))
     proxies = WORKING_PROXIES[:limit]
     
@@ -328,7 +325,7 @@ def api_stats():
 if __name__ == '__main__':
     print("=" * 50)
     print(f"🔥 BRONX ULTRA Views API")
-    print(f"✅ {len(WORKING_PROXIES)} HTTP/HTTPS Proxies")
+    print(f"✅ {len(WORKING_PROXIES)} Proxies")
     print("=" * 50)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
