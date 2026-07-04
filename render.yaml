@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bronx-views-http
+    name: bronx-views-web
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
